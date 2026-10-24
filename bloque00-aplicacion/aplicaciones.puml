@@ -1,0 +1,55 @@
+@startuml aplicaciones
+!theme plain
+title Bloque 00 - Aplicación Gestor de Alumnos (docker compose)
+
+skinparam componentStyle rectangle
+skinparam nodeBorderColor #555555
+skinparam packageBorderColor #555555
+
+actor "Usuario / Navegador" as user
+
+package "Docker Desktop" {
+
+  node "ep02-network (bridge)" as net {
+
+    component "ep02-frontend\n(Nginx + SPA HTML/JS)" as fe
+    component "ep02-backend\n(Spring Boot + JDK 21)" as be
+    database "ep02-db\n(PostgreSQL 16)" as db
+
+    fe -down-> be : "proxy /ep02\nhttp://ep02-backend:8080"
+    be -down-> db : "jdbc:postgresql://\nep02-db:5432/ep02"
+
+  }
+
+  folder "Volumen pgdata" as vol
+
+}
+
+cloud "Docker Hub / Registro" as hub {
+}
+
+user --> fe : "http://localhost:80\n(puerto 80)"
+db --> vol : "/var/lib/postgresql/data\n(persistencia)"
+
+note right of fe
+  imagen: ep02-frontend:latest
+  build: ./ep02_ing_devops_frontend
+  depends_on: backend (service_healthy)
+end note
+
+note right of be
+  imagen: ep02-backend:latest
+  build: ./ep02_ing_devops_backend
+  puerto: 8080
+  depends_on: db (service_healthy)
+end note
+
+note right of db
+  imagen: ep02-db:latest
+  build: ./ep02_ing_devops_database
+  puerto: 5432
+  healthcheck: pg_isready
+end note
+
+net ..> hub : "pull de imágenes base"
+@enduml

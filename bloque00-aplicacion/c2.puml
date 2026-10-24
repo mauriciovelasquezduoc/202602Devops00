@@ -1,0 +1,37 @@
+@startuml c2
+!theme plain
+title C2 - Contenedores: Gestor de Alumnos (docker compose)
+
+skinparam actorStyle awesome
+skinparam componentStyle rectangle
+skinparam rectangle {
+  BackgroundColor #F5F7FA
+  BorderColor #5B6B7B
+}
+skinparam database {
+  BackgroundColor #EAF3FB
+  BorderColor #2D6CA2
+}
+
+actor "Usuario\n(Navegador)" as user
+
+package "Docker Desktop - host: localhost" {
+
+  node "ep02-network [bridge]" as net {
+
+    component "ep02-frontend\n[Nginx + SPA React]\n:80" as fe
+    component "ep02-backend\n[Spring Boot API / JDK 21]\n:8080" as be
+    database "ep02-db\n[PostgreSQL 16]\n:5432" as db
+
+    fe -right-> be : "proxy /ep02\nhttp://ep02-backend:8080"
+    be -right-> db : "JDBC\njdbc:postgresql://ep02-db:5432/ep02"
+
+  }
+
+  database "Volumen pgdata\n[/var/lib/postgresql/data]" as vol
+
+}
+
+user -down-> fe : "HTTP :80"
+db -down-> vol : "persistencia"
+@enduml

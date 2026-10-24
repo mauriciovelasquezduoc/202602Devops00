@@ -1,0 +1,81 @@
+@startuml c4
+!theme plain
+title C4 - Nivel 4 (Código): Gestor de Alumnos
+
+skinparam class {
+  BackgroundColor #F5F7FA
+  BorderColor #5B6B7B
+  ArrowColor #5B6B7B
+}
+skinparam package {
+  BackgroundColor #FFFFFF
+  BorderColor #AAB4BE
+}
+
+package "Frontend - React (ep02-frontend)" {
+
+  class "App" as App <<React>>
+  class "AlumnoForm" as Form <<React>>
+  class "AlumnoTable" as Table <<React>>
+  class "CsvPanel" as Csv <<React>>
+  class "useAlumnos" as Hook <<React Hook>>
+  interface "api/alumnos" as Api <<JS Module>>
+
+  App --> Form
+  App --> Table
+  App --> Csv
+  App --> Hook
+  Hook --> Api
+}
+
+package "Backend - Spring Boot (ep02-backend)" {
+
+  class "AlumnoController" as Controller <<RestController /ep02>> {
+    + listar() : List<Alumno>
+    + crear(Alumno) : Alumno
+    + actualizar(id, Alumno) : Alumno
+    + eliminar(id) : void
+    + exportar() : String
+    + importar(csv) : void
+  }
+
+  class "AlumnoService" as Service <<Service>> {
+    + listar() : List<Alumno>
+    + crear(Alumno) : Alumno
+    + actualizar(id, Alumno) : Alumno
+    + eliminar(id) : void
+  }
+
+  interface "AlumnoRepository" as Repository <<JpaRepository>>
+
+  class "AlumnoMapper" as Mapper <<utility>> {
+    + toDomain(AlumnoEntity) : Alumno
+    + toEntity(Alumno) : AlumnoEntity
+  }
+
+  class "Alumno" as Domain <<domain>> {
+    - id : Long
+    - nombre : String
+    - apellido : String
+  }
+
+  class "AlumnoEntity" as Entity <<Entity / tabla ep02>> {
+    - id : Long
+    - nombre : String
+    - apellido : String
+  }
+
+  Controller --> Service : usa
+  Service --> Repository : usa
+  Service ..> Mapper : usa
+  Mapper ..> Domain : crea
+  Mapper ..> Entity : crea
+  Repository ..> Entity : gestiona
+}
+
+class "ep02-db" as DB <<tabla: ep02(id, nombre, apellido)>> {
+}
+
+Api --> Controller : "HTTP /ep02"
+Repository --> DB : "JPA / SQL"
+@enduml

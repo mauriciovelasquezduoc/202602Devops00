@@ -1,0 +1,240 @@
+name: Deploy EKS - Database
+
+# ============================================================================
+# DEPLOY-ONLY.
+# La validación de la imagen (build + Trivy + smoke test de init.sql) la
+# ejecuta el workflow "Calidad de código" (calidad-codigo.yml) del mismo repo.
+#
+# OPCIÓN 1: este workflow se dispara SOLO cuando "Calidad de código" termina
+# con éxito (trigger `workflow_run` + gate `conclusion == 'success'`) y
+# despliega EL MISMO commit que pasó la calidad (`head_sha`).
+#
+# Secrets necesarios (Settings > Secrets and variables > Actions):
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_REGION
+#   (GITHUB_TOKEN lo provee GitHub automáticamente)
+# ============================================================================
+
+on:
+  workflow_run:
+    workflows: ["Calidad de código"]
+    types: [completed]
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPO_DB: ep02-database
+  K8S_NAMESPACE: ep02
+  DEPLOYMENT_NAME: ep02-database
+
+permissions:
+  contents: write
+
+jobs:
+  # ============================================================
+  # JOB 1: VERSIONING — calcula v1.x.0 y crea tag git
+  # ============================================================
+  versioning:
+    name: Versionado Semántico (v1.x.0)
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    outputs:
+      new_tag: ${{ steps.calc.outputs.new_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calcular y crear tag
+        id: calc
+        run: |
+          set -euo pipefail
+          LAST=$(git tag --list 'v1.*' --sort=-v:refname | head -1)
+          if [ -z "$LAST" ]; then
+            NEW="v1.0.0"
+          else
+            MINOR=$(echo "$LAST" | cut -d. -f2)
+            NEW="v1.$((MINOR + 1)).0"
+          fi
+          echo "Último: ${LAST:-ninguno} → Nuevo: $NEW"
+          echo "new_tag=$NEW" >> "$GITHUB_OUTPUT"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$NEW"
+          git push origin "$NEW"
+
+  # ============================================================
+  # JOB 2: BUILD & PUSH ECR — construye y publica la imagen
+  # ============================================================
+  build-push-ecr:
+    name: Build & Push ECR
+    runs-on: ubuntu-latest
+    needs: versioning
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login a Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build y push con cache
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO_DB }}:${{ needs.versioning.outputs.new_tag }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO_DB }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Resumen build
+        run: |
+          echo "### Imagen DB publicada en ECR" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Tag:** \`${{ needs.versioning.outputs.new_tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Registry:** \`${{ steps.login-ecr.outputs.registry }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Repositorio:** \`${{ env.ECR_REPO_DB }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================
+  # JOB 3: DEPLOY A EKS — aplica manifiestos y actualiza imagen
+  # ============================================================
+  deploy:
+    name: Deploy a EKS
+    runs-on: ubuntu-latest
+    needs: [versioning, build-push-ecr]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login a Amazon ECR
+        id: login-ecr-deploy
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Deducir variables de EKS
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          CLUSTER=$(aws eks list-clusters --region "$AWS_REGION" --query 'clusters[0]' --output text)
+          if [ -z "$CLUSTER" ] || [ "$CLUSTER" = "None" ]; then
+            echo "ERROR: No se encontro ningun cluster EKS en la region $AWS_REGION"
+            exit 1
+          fi
+          echo "EKS_CLUSTER_NAME=$CLUSTER" >> "$GITHUB_ENV"
+          echo "  Cluster detectado: $CLUSTER"
+
+      - name: Instalar kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.29.0
+
+      - name: Configurar kubeconfig
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig \
+            --region "$AWS_REGION" \
+            --name "$EKS_CLUSTER_NAME"
+          echo "  Contexto: $(kubectl config current-context)"
+
+      - name: Forzar recreate de pods por probes nuevas
+        run: |
+          echo "  Eliminando pods antiguos para forzar recreate con probes actualizadas..."
+          kubectl delete pod -n "$K8S_NAMESPACE" -l "app=${ECR_REPO_DB}" --grace-period=0 --force 2>/dev/null || true
+          echo "  Pods eliminados, se recrearán automáticamente"
+
+      - name: Actualizar imagen del deployment
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr-deploy.outputs.registry }}
+        run: |
+          set -euo pipefail
+          echo "  Actualizando deployment/${DEPLOYMENT_NAME}..."
+          echo "  Usando tag: latest"
+          kubectl set image "deployment/${DEPLOYMENT_NAME}" \
+            "database=$ECR_REGISTRY/${ECR_REPO_DB}:latest" \
+            -n "$K8S_NAMESPACE"
+
+          echo "  Esperando a que el pod esté Ready (máx 5 min)..."
+          END=$((SECONDS+300))
+          READY=false
+          while [ $SECONDS -lt $END ]; do
+            POD_INFO=$(kubectl get pods -n "$K8S_NAMESPACE" -l "app=${ECR_REPO_DB}" --no-headers 2>/dev/null | head -1)
+            echo "    Pod status: ${POD_INFO:-sin pods aún}"
+            if echo "$POD_INFO" | grep -qE "[0-9]+\/[0-9]+\s+Running"; then
+              echo "  Todos los pods Ready"
+              READY=true
+              break
+            fi
+            POD_STATUS=$(echo "$POD_INFO" | awk '{print $3}')
+            if echo "$POD_STATUS" | grep -qE "ImagePullBackOff|ErrImagePull|CrashLoopBackOff|Error"; then
+              echo ""
+              echo "==========================================================="
+              echo "  ERROR: El pod entro en estado: $POD_STATUS"
+              echo "==========================================================="
+              kubectl describe pod -n "$K8S_NAMESPACE" -l "app=${ECR_REPO_DB}" || true
+              kubectl logs -n "$K8S_NAMESPACE" -l "app=${ECR_REPO_DB}" --tail=20 || true
+              exit 1
+            fi
+            sleep 10
+          done
+          if [ "$READY" = false ]; then
+            echo ""
+            echo "==========================================================="
+            echo "  ERROR: El pod no estuvo Ready tras 5 minutos."
+            echo "==========================================================="
+            kubectl describe pod -n "$K8S_NAMESPACE" -l "app=${ECR_REPO_DB}" || true
+            kubectl logs -n "$K8S_NAMESPACE" -l "app=${ECR_REPO_DB}" --tail=20 || true
+            exit 1
+          fi
+          echo "  Pod Ready"
+
+      - name: Verificar estado final
+        run: |
+          echo ""
+          echo "========================================="
+          echo " RESUMEN DEL DEPLOY DB"
+          echo "========================================="
+          echo ""
+          echo "--- Pods ---"
+          kubectl get pods -n "$K8S_NAMESPACE" -l "app=ep02-database"
+          echo ""
+          echo "--- Services ---"
+          kubectl get svc -n "$K8S_NAMESPACE" -l "app=ep02-database"
+          echo ""
+          echo "--- Logs (últimas 10 líneas) ---"
+          POD=$(kubectl get pods -n "$K8S_NAMESPACE" -l "app=ep02-database" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+          if [ -n "$POD" ]; then
+            kubectl logs "$POD" -n "$K8S_NAMESPACE" --tail=10 2>/dev/null || true
+          fi
+
+      - name: Resumen deploy
+        if: success()
+        run: |
+          echo "### Deploy DB completado exitosamente" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Cluster:** \`${{ env.EKS_CLUSTER_NAME }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Deployment:** \`${{ env.DEPLOYMENT_NAME }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Namespace:** \`${{ env.K8S_NAMESPACE }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Versión imagen:** \`${{ env.ECR_REPO_DB }}:${{ needs.versioning.outputs.new_tag }}\`" >> "$GITHUB_STEP_SUMMARY"

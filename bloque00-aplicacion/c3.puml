@@ -1,0 +1,51 @@
+@startuml c3
+!theme plain
+title C3 - Componentes: Gestor de Alumnos
+
+skinparam componentStyle rectangle
+skinparam component {
+  BackgroundColor #F5F7FA
+  BorderColor #5B6B7B
+}
+skinparam database {
+  BackgroundColor #EAF3FB
+  BorderColor #2D6CA2
+}
+skinparam package {
+  BackgroundColor #FFFFFF
+  BorderColor #AAB4BE
+}
+
+package "Contenedor: ep02-frontend (React SPA + Nginx)" {
+
+  component "App\n[UI principal]" as App
+  component "AlumnoForm\n[formulario alta/edición]" as Form
+  component "AlumnoTable\n[listado + acciones]" as Table
+  component "CsvPanel\n[importar / exportar CSV]" as Csv
+  component "useAlumnos\n[estado + acciones]" as Hook
+  component "api/alumnos\n[cliente axios /ep02]" as Api
+
+  App --> Form
+  App --> Table
+  App --> Csv
+  App --> Hook
+  Hook --> Api
+}
+
+package "Contenedor: ep02-backend (Spring Boot API)" {
+
+  component "AlumnoController\n[/ep02 REST]" as Ctrl
+  component "AlumnoService\n[lógica de negocio]" as Svc
+  component "AlumnoRepository\n[JPA]" as Repo
+  component "AlumnoMapper\n[domain <-> entity]" as Mapper
+
+  Ctrl --> Svc
+  Svc --> Repo
+  Svc ..> Mapper
+}
+
+database "Contenedor: ep02-db\n[PostgreSQL 16 - tabla ep02]" as DB
+
+Api --> Ctrl : "HTTP /ep02"
+Repo --> DB : "JPA / SQL"
+@enduml

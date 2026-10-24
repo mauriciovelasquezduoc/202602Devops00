@@ -1,0 +1,99 @@
+@startuml diagra_cecuencia
+!theme plain
+title Diagrama de Secuencia - Endpoints de la aplicación (Gestor de Alumnos)
+
+actor "Usuario" as user
+participant "Frontend\n(React SPA / Nginx)" as fe
+participant "api/alumnos\n(axios baseURL /ep02)" as api
+participant "AlumnoController\n(REST /ep02)" as ctrl
+participant "AlumnoService" as svc
+participant "AlumnoRepository\n(JPA)" as repo
+database "PostgreSQL\n(tabla ep02)" as db
+
+== GET /ep02 - Listar alumnos ==
+user -> fe : Abrir aplicación / recargar
+fe -> api : getAlumnos()
+api -> ctrl : GET /ep02
+ctrl -> svc : listar()
+svc -> repo : findAll()
+repo -> db : SELECT * FROM ep02
+db --> repo : filas
+repo --> svc : List<AlumnoEntity>
+svc --> ctrl : List<Alumno> (AlumnoMapper.toDomain)
+ctrl --> api : 200 OK [JSON]
+api --> fe : lista de alumnos
+fe --> user : Renderiza la tabla
+
+== POST /ep02 - Crear alumno ==
+user -> fe : Enviar formulario (nombre, apellido)
+fe -> api : createAlumno(data)
+api -> ctrl : POST /ep02 [JSON]
+ctrl -> svc : crear(Alumno)
+svc -> repo : save(AlumnoEntity)
+repo -> db : INSERT INTO ep02
+db --> repo : id generado
+repo --> svc : AlumnoEntity
+svc --> ctrl : Alumno
+ctrl --> api : 200 OK [JSON]
+api --> fe : confirmación
+fe --> user : Notifica y recarga la lista
+
+== PUT /ep02/{id} - Actualizar alumno ==
+user -> fe : Editar alumno y guardar
+fe -> api : updateAlumno(id, data)
+api -> ctrl : PUT /ep02/{id} [JSON]
+ctrl -> svc : actualizar(id, Alumno)
+note right of svc : a.setId(id); return crear(a)
+svc -> repo : save(AlumnoEntity)
+repo -> db : INSERT/UPDATE ep02
+db --> repo : fila afectada
+repo --> svc : AlumnoEntity
+svc --> ctrl : Alumno
+ctrl --> api : 200 OK [JSON]
+api --> fe : confirmación
+fe --> user : Notifica y recarga la lista
+
+== DELETE /ep02/{id} - Eliminar alumno ==
+user -> fe : Confirmar eliminación
+fe -> api : deleteAlumno(id)
+api -> ctrl : DELETE /ep02/{id}
+ctrl -> svc : eliminar(id)
+svc -> repo : deleteById(id)
+repo -> db : DELETE FROM ep02 WHERE id=?
+db --> repo : ok
+repo --> svc : void
+svc --> ctrl : void
+ctrl --> api : 200 OK
+api --> fe : ok
+fe --> user : Recarga la lista
+
+== GET /ep02/export - Exportar CSV ==
+user -> fe : Clic en "Exportar todos"
+fe -> api : exportCSV()
+api -> ctrl : GET /ep02/export
+ctrl -> svc : listar()
+svc -> repo : findAll()
+repo -> db : SELECT * FROM ep02
+db --> repo : filas
+repo --> svc : List<AlumnoEntity>
+svc --> ctrl : List<Alumno>
+ctrl --> api : 200 OK [text/csv\n"nombre,apellido"]
+api --> fe : texto CSV
+fe --> user : Descarga ep02.csv
+
+== POST /ep02/import - Importar CSV ==
+user -> fe : Pegar CSV y clic en "Importar"
+fe -> api : importCSV(csvText)
+api -> ctrl : POST /ep02/import [text/plain]
+loop por cada línea "nombre,apellido"
+  ctrl -> svc : crear(Alumno)
+  svc -> repo : save(AlumnoEntity)
+  repo -> db : INSERT INTO ep02
+  db --> repo : ok
+  repo --> svc : AlumnoEntity
+  svc --> ctrl : Alumno
+end
+ctrl --> api : 200 OK
+api --> fe : ok
+fe --> user : Notifica y recarga la lista
+@enduml

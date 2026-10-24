@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${NAMESPACE}-database
+  namespace: ${NAMESPACE}
+spec:
+  replicas: ${DATABASE_REPLICAS}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ${NAMESPACE}-database
+  template:
+    metadata:
+      labels:
+        app: ${NAMESPACE}-database
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: database
+          image: ${DATABASE_IMAGE}
+          ports:
+            - containerPort: ${DATABASE_PORT}
+          env:
+            - name: POSTGRES_DB
+              value: "${DATABASE_NAME}"
+            - name: POSTGRES_USER
+              value: "${DATABASE_USER}"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: database-secret
+                  key: POSTGRES_PASSWORD
+          readinessProbe:
+            tcpSocket:
+              port: ${DATABASE_PORT}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: ${DATABASE_PORT}
+            initialDelaySeconds: 40
+            periodSeconds: 15
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          emptyDir: {}

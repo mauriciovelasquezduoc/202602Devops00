@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${NAMESPACE}-backend
+  namespace: ${NAMESPACE}
+spec:
+  replicas: ${BACKEND_REPLICAS}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ${NAMESPACE}-backend
+  template:
+    metadata:
+      labels:
+        app: ${NAMESPACE}-backend
+    spec:
+      containers:
+        - name: backend
+          image: ${BACKEND_IMAGE}
+          ports:
+            - containerPort: ${BACKEND_PORT}
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            - name: DB_URL
+              value: "jdbc:postgresql://${NAMESPACE}-database:${DATABASE_PORT}/${DATABASE_NAME}"
+            - name: DB_USERNAME
+              value: "${DATABASE_USER}"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: database-secret
+                  key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              cpu: "${BACKEND_CPU_REQUEST}"
+              memory: "${BACKEND_MEM_REQUEST}"
+            limits:
+              cpu: "${BACKEND_CPU_LIMIT}"
+              memory: "${BACKEND_MEM_LIMIT}"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: ${BACKEND_PORT}
+            initialDelaySeconds: 50
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: ${BACKEND_PORT}
+            initialDelaySeconds: 70
+            periodSeconds: 15
+            failureThreshold: 6

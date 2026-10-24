@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${NAMESPACE}-database
+  namespace: ${NAMESPACE}
+spec:
+  selector:
+    app: ${NAMESPACE}-database
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: ${DATABASE_PORT}
+      targetPort: ${DATABASE_PORT}

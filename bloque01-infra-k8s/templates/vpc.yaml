@@ -1,0 +1,439 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  VPC Multi-AZ preparada para Amazon EKS privado
+  con VPC Endpoints y arquitectura 3-tier.
+
+# =========================================================
+# VPC
+# =========================================================
+
+Resources:
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+      Tags:
+        - Key: Name
+          Value: laboratorio-ep02
+
+# =========================================================
+# INTERNET GATEWAY
+# =========================================================
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+# =========================================================
+# PUBLIC SUBNETS
+# =========================================================
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: us-east-1a
+
+      MapPublicIpOnLaunch: true
+
+      Tags:
+        - Key: Name
+          Value: public-subnet-a
+
+        - Key: kubernetes.io/role/elb
+          Value: "1"
+
+        - Key: kubernetes.io/cluster/laboratorio-ep02-eks
+          Value: shared
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: us-east-1b
+
+      MapPublicIpOnLaunch: true
+
+      Tags:
+        - Key: Name
+          Value: public-subnet-b
+
+        - Key: kubernetes.io/role/elb
+          Value: "1"
+
+        - Key: kubernetes.io/cluster/laboratorio-ep02-eks
+          Value: shared
+
+# =========================================================
+# PRIVATE APP SUBNETS
+# =========================================================
+
+  PrivateAppSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+
+      CidrBlock: 10.0.11.0/24
+      AvailabilityZone: us-east-1a
+
+      Tags:
+        - Key: Name
+          Value: private-app-a
+
+        - Key: kubernetes.io/role/internal-elb
+          Value: "1"
+
+        - Key: kubernetes.io/cluster/laboratorio-ep02-eks
+          Value: shared
+
+  PrivateAppSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+
+      CidrBlock: 10.0.12.0/24
+      AvailabilityZone: us-east-1b
+
+      Tags:
+        - Key: Name
+          Value: private-app-b
+
+        - Key: kubernetes.io/role/internal-elb
+          Value: "1"
+
+        - Key: kubernetes.io/cluster/laboratorio-ep02-eks
+          Value: shared
+
+# =========================================================
+# PRIVATE DATA SUBNETS
+# =========================================================
+
+  PrivateDataSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+
+      CidrBlock: 10.0.21.0/24
+      AvailabilityZone: us-east-1a
+
+      Tags:
+        - Key: Name
+          Value: private-data-a
+
+  PrivateDataSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+
+      CidrBlock: 10.0.22.0/24
+      AvailabilityZone: us-east-1b
+
+      Tags:
+        - Key: Name
+          Value: private-data-b
+
+# =========================================================
+# ROUTE TABLES
+# =========================================================
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  AppPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DataPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+# =========================================================
+# ROUTE TABLE ASSOCIATIONS
+# =========================================================
+
+  PublicSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateAppSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateAppSubnetA
+      RouteTableId: !Ref AppPrivateRouteTable
+
+  PrivateAppSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateAppSubnetB
+      RouteTableId: !Ref AppPrivateRouteTable
+
+  PrivateDataSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateDataSubnetA
+      RouteTableId: !Ref DataPrivateRouteTable
+
+  PrivateDataSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateDataSubnetB
+      RouteTableId: !Ref DataPrivateRouteTable
+
+# =========================================================
+# SECURITY GROUP FOR VPC ENDPOINTS
+# =========================================================
+
+  EndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for VPC Endpoints
+
+      VpcId: !Ref VPC
+
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 10.0.0.0/16
+
+      Tags:
+        - Key: Name
+          Value: eks-endpoints-sg
+
+# =========================================================
+# S3 GATEWAY ENDPOINT
+# =========================================================
+
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+
+      VpcEndpointType: Gateway
+
+      RouteTableIds:
+        - !Ref PublicRouteTable
+        - !Ref AppPrivateRouteTable
+        - !Ref DataPrivateRouteTable
+
+# =========================================================
+# ECR API ENDPOINT
+# =========================================================
+
+  EcrApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
+
+      VpcEndpointType: Interface
+
+      PrivateDnsEnabled: true
+
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+
+      SubnetIds:
+        - !Ref PrivateAppSubnetA
+        - !Ref PrivateAppSubnetB
+
+# =========================================================
+# ECR DKR ENDPOINT
+# =========================================================
+
+  EcrDkrEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
+
+      VpcEndpointType: Interface
+
+      PrivateDnsEnabled: true
+
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+
+      SubnetIds:
+        - !Ref PrivateAppSubnetA
+        - !Ref PrivateAppSubnetB
+
+# =========================================================
+# STS ENDPOINT
+# =========================================================
+
+  StsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.sts
+
+      VpcEndpointType: Interface
+
+      PrivateDnsEnabled: true
+
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+
+      SubnetIds:
+        - !Ref PrivateAppSubnetA
+        - !Ref PrivateAppSubnetB
+
+# =========================================================
+# CLOUDWATCH LOGS ENDPOINT
+# =========================================================
+
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+
+      VpcEndpointType: Interface
+
+      PrivateDnsEnabled: true
+
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+
+      SubnetIds:
+        - !Ref PrivateAppSubnetA
+        - !Ref PrivateAppSubnetB
+
+# =========================================================
+# EC2 ENDPOINT
+# =========================================================
+
+  Ec2Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ec2
+
+      VpcEndpointType: Interface
+
+      PrivateDnsEnabled: true
+
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+
+      SubnetIds:
+        - !Ref PrivateAppSubnetA
+        - !Ref PrivateAppSubnetB
+
+# =========================================================
+# EKS ENDPOINT
+# =========================================================
+
+  EksEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.eks
+
+      VpcEndpointType: Interface
+
+      PrivateDnsEnabled: true
+
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+
+      SubnetIds:
+        - !Ref PrivateAppSubnetA
+        - !Ref PrivateAppSubnetB
+
+# =========================================================
+# ELB ENDPOINT
+# =========================================================
+
+  ElbEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.elasticloadbalancing
+
+      VpcEndpointType: Interface
+
+      PrivateDnsEnabled: true
+
+      SecurityGroupIds:
+        - !Ref EndpointSecurityGroup
+
+      SubnetIds:
+        - !Ref PrivateAppSubnetA
+        - !Ref PrivateAppSubnetB
+
+# =========================================================
+# OUTPUTS
+# =========================================================
+
+Outputs:
+
+  VpcId:
+    Value: !Ref VPC
+
+  PublicSubnetA:
+    Value: !Ref PublicSubnetA
+
+  PublicSubnetB:
+    Value: !Ref PublicSubnetB
+
+  PrivateAppSubnetA:
+    Value: !Ref PrivateAppSubnetA
+
+  PrivateAppSubnetB:
+    Value: !Ref PrivateAppSubnetB
+
+  PrivateDataSubnetA:
+    Value: !Ref PrivateDataSubnetA
+
+  PrivateDataSubnetB:
+    Value: !Ref PrivateDataSubnetB
+
+  EndpointSecurityGroup:
+    Value: !Ref EndpointSecurityGroup

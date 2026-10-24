@@ -1,0 +1,31 @@
+@startuml c1
+!theme plain
+title C1 - Contexto del Sistema: Gestor de Alumnos (bloque00-aplicacion)
+
+skinparam actorStyle awesome
+skinparam componentStyle rectangle
+skinparam rectangle {
+  BackgroundColor #F5F7FA
+  BorderColor #5B6B7B
+}
+skinparam node {
+  BackgroundColor #EDF3FB
+  BorderColor #5B6B7B
+}
+skinparam cloud {
+  BackgroundColor #F0F6EC
+  BorderColor #5B6B7B
+}
+
+actor "Usuario\n(Alumno / Administrador)" as user
+
+rectangle "Gestor de Alumnos\n[Sistema de gestión CRUD de alumnos\ny carga/descarga CSV]" as system
+
+node "Docker Desktop\n[Plataforma de contenedores / host]" as docker
+
+cloud "Docker Hub\n[Registro público de imágenes base]" as hub
+
+user --> system : "Usa\nhttp://localhost:80"
+system --> docker : "Se despliega y ejecuta en\n(docker compose)"
+system ..> hub : "Descarga imágenes base\n(nginx, temurin, postgres)"
+@enduml

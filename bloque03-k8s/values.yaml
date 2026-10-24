@@ -1,0 +1,40 @@
+# values.yaml - Configuración centralizada del clúster
+# Modifica estos valores para cambiar la configuración del despliegue
+
+# Namespace
+NAMESPACE=ep02
+
+# Imágenes ECR — la cuenta se resuelve en runtime desde AWS STS (apply-all.sh),
+# por lo que aquí se deja el placeholder <AWSAccountId>.
+DATABASE_IMAGE=<AWSAccountId>.dkr.ecr.us-east-1.amazonaws.com/ep02-database:latest
+BACKEND_IMAGE=<AWSAccountId>.dkr.ecr.us-east-1.amazonaws.com/ep02-backend:latest
+FRONTEND_IMAGE=<AWSAccountId>.dkr.ecr.us-east-1.amazonaws.com/ep02-frontend:latest
+
+# Base de datos
+DATABASE_NAME=ep02
+DATABASE_USER=ep02_user
+DATABASE_PASSWORD_B64=YWx1bW5vc19wYXNz
+DATABASE_PORT=5432
+DATABASE_REPLICAS=1
+
+# Backend
+BACKEND_PORT=8080
+BACKEND_REPLICAS=1
+BACKEND_CPU_REQUEST=100m
+BACKEND_CPU_LIMIT=500m
+BACKEND_MEM_REQUEST=128Mi
+BACKEND_MEM_LIMIT=512Mi
+BACKEND_HPA_MIN=1
+BACKEND_HPA_MAX=10
+BACKEND_HPA_CPU=70
+
+# Frontend
+FRONTEND_PORT=80
+FRONTEND_REPLICAS=2
+FRONTEND_CPU_REQUEST=50m
+FRONTEND_CPU_LIMIT=300m
+FRONTEND_MEM_REQUEST=64Mi
+FRONTEND_MEM_LIMIT=256Mi
+FRONTEND_HPA_MIN=2
+FRONTEND_HPA_MAX=6
+FRONTEND_HPA_CPU=60

@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Amazon EKS Multi-AZ Cluster for AWS Academy
+
+Parameters:
+
+  VPCId:
+    Type: AWS::EC2::VPC::Id
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet::Id
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateAppSubnetA:
+    Type: AWS::EC2::Subnet::Id
+
+  PrivateAppSubnetB:
+    Type: AWS::EC2::Subnet::Id
+
+  EksClusterRoleArn:
+    Type: String
+
+  EksNodeRoleArn:
+    Type: String
+
+Resources:
+
+  EksClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EKS Cluster Security Group
+      VpcId: !Ref VPCId
+
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          CidrIp: 10.0.0.0/16
+
+      Tags:
+        - Key: Name
+          Value: eks-cluster-sg
+
+  EksCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+
+      Name: laboratorio-ep02-eks
+
+      # 1.32 (no 1.33): AL2 solo esta soportado hasta k8s 1.32 y es la unica AMI
+      # que evita el SCP de AWS Academy (AL2023/nodeadm requiere ec2:DescribeInstances).
+      Version: "1.32"
+
+      RoleArn: !Ref EksClusterRoleArn
+
+      ResourcesVpcConfig:
+
+        EndpointPublicAccess: true
+        EndpointPrivateAccess: true
+
+        SecurityGroupIds:
+          - !Ref EksClusterSecurityGroup
+
+        SubnetIds:
+          - !Ref PublicSubnetA
+          - !Ref PublicSubnetB
+          - !Ref PrivateAppSubnetA
+          - !Ref PrivateAppSubnetB
+
+      Logging:
+        ClusterLogging:
+
+          EnabledTypes:
+            - Type: api
+            - Type: audit
+            - Type: authenticator
+            - Type: controllerManager
+            - Type: scheduler
+
+  VpcCniAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EksCluster
+
+    Properties:
+      ClusterName: !Ref EksCluster
+      AddonName: vpc-cni
+
+  CoreDnsAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EksCluster
+
+    Properties:
+      ClusterName: !Ref EksCluster
+      AddonName: coredns
+
+  KubeProxyAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EksCluster
+
+    Properties:
+      ClusterName: !Ref EksCluster
+      AddonName: kube-proxy
+
+  MetricsServerAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EksCluster
+
+    Properties:
+      ClusterName: !Ref EksCluster
+      AddonName: metrics-server
+
+  EksNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    DependsOn: EksCluster
+
+    Properties:
+
+      ClusterName: !Ref EksCluster
+
+      NodegroupName: laboratorio-ep02-nodegroup
+
+      NodeRole: !Ref EksNodeRoleArn
+
+      # AL2 (no AL2023): en AWS Academy el SCP niega ec2:DescribeInstances, que
+      # nodeadm (AL2023) necesita en su "InstanceCondition waiter"; con AL2023 el
+      # nodo nunca se une al cluster. AL2 usa bootstrap.sh y no requiere esa API
+      # (AL2 solo esta disponible hasta k8s 1.32, por eso Version: "1.32").
+      AmiType: AL2_x86_64
+
+      CapacityType: SPOT
+
+      InstanceTypes:
+        - t3.large
+
+      DiskSize: 20
+
+      Subnets:
+        - !Ref PrivateAppSubnetA
+        - !Ref PrivateAppSubnetB
+
+      ScalingConfig:
+        DesiredSize: 1
+        MinSize: 1
+        MaxSize: 3
+
+Outputs:
+
+  ClusterName:
+    Value: !Ref EksCluster

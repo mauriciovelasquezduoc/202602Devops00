@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${NAMESPACE}-frontend
+  namespace: ${NAMESPACE}
+spec:
+  replicas: ${FRONTEND_REPLICAS}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ${NAMESPACE}-frontend
+  template:
+    metadata:
+      labels:
+        app: ${NAMESPACE}-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ${FRONTEND_IMAGE}
+          ports:
+            - containerPort: ${FRONTEND_PORT}
+          env:
+            # FQDN: el resolver de nginx no aplica search domains de Kubernetes
+            - name: BACKEND_HOST
+              value: "${NAMESPACE}-backend.${NAMESPACE}.svc.cluster.local"
+          resources:
+            requests:
+              cpu: "${FRONTEND_CPU_REQUEST}"
+              memory: "${FRONTEND_MEM_REQUEST}"
+            limits:
+              cpu: "${FRONTEND_CPU_LIMIT}"
+              memory: "${FRONTEND_MEM_LIMIT}"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: ${FRONTEND_PORT}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: ${FRONTEND_PORT}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 6

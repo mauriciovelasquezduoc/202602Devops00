@@ -1,0 +1,23 @@
+# Java
+*.class
+target/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# Archivos del sistema
+.DS_Store
+
+# Variables de entorno y secretos
+.env
+.env.*
+!.env.example
+secrets.txt
+
+bloque00-aplicacion/ep02_ing_devops_backend/.github/workflows/deploy.yml
+bloque00-aplicacion/ep02_ing_devops_database/.github/workflows/deploy.yml
+bloque00-aplicacion/ep02_ing_devops_frontend/.github/workflows/deploy.yml

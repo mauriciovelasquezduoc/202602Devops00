@@ -1,0 +1,84 @@
+# docker-compose.yml — levanta la aplicación completa en orden:
+#   1) database (ep02-db)
+#   2) backend  (ep02-backend, espera a que la DB esté healthy)
+#   3) frontend (ep02-frontend, espera a que el backend esté healthy)
+#
+# Uso:
+#   cd bloque00-aplicacion
+#   docker compose up -d --build
+#
+# Detener y eliminar:
+#   docker compose down
+
+services:
+
+  # ── 1) Base de datos (primero) ──────────────────────────────────────────────
+  ep02-db:
+    build:
+      context: ./ep02_ing_devops_database
+      dockerfile: Dockerfile
+    image: ep02-db:latest
+    container_name: ep02-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ep02
+      POSTGRES_USER: ep02_user
+      POSTGRES_PASSWORD: ep02_pass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ep02_user -d ep02"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ep02-network
+
+  # ── 2) Backend (espera a la DB) ─────────────────────────────────────────────
+  ep02-backend:
+    build:
+      context: ./ep02_ing_devops_backend
+      dockerfile: Dockerfile
+    image: ep02-backend:latest
+    container_name: ep02-backend
+    restart: unless-stopped
+    depends_on:
+      ep02-db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://ep02-db:5432/ep02
+      SPRING_DATASOURCE_USERNAME: ep02_user
+      SPRING_DATASOURCE_PASSWORD: ep02_pass
+    ports:
+      - "8080:8080"
+    networks:
+      - ep02-network
+
+  # ── 3) Frontend (espera al backend) ─────────────────────────────────────────
+  ep02-frontend:
+    build:
+      context: ./ep02_ing_devops_frontend
+      dockerfile: Dockerfile
+    image: ep02-frontend:latest
+    container_name: ep02-frontend
+    restart: unless-stopped
+    depends_on:
+      ep02-backend:
+        condition: service_healthy
+    environment:
+      BACKEND_HOST: ep02-backend
+    ports:
+      - "80:80"
+    networks:
+      - ep02-network
+
+networks:
+  ep02-network:
+    name: ep02-network
+    driver: bridge
+
+volumes:
+  pgdata:

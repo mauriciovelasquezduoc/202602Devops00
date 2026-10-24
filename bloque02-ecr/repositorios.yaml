@@ -1,0 +1,18 @@
+# repositorios.yaml - Configuración de repositorios ECR
+# Nombres de los repositorios a crear
+
+REPOSITORIES:
+  - Name: ep02-database
+    Description: Repositorio para imagen de base de datos
+    ImageTagMutability: MUTABLE
+    ScanOnPush: false
+
+  - Name: ep02-backend
+    Description: Repositorio para imagen de backend Spring Boot
+    ImageTagMutability: MUTABLE
+    ScanOnPush: false
+
+  - Name: ep02-frontend
+    Description: Repositorio para imagen de frontend Nginx
+    ImageTagMutability: MUTABLE
+    ScanOnPush: false

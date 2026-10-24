@@ -1,0 +1,119 @@
+
+@startuml
+!include <awslib/AWSCommon>
+!include <awslib/NetworkingContentDelivery/VirtualPrivateCloud>
+!include <awslib/NetworkingContentDelivery/InternetGateway>
+!include <awslib/Containers/ElasticKubernetesService>
+!include <awslib/Storage/SimpleStorageService>
+!include <awslib/Database/DynamoDB>
+!include <awslib/Compute/EC2>
+!include <awslib/ManagementGovernance/Cloudwatch>
+
+
+left to right direction
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam componentStyle rectangle
+
+cloud "Internet" as internet
+
+InternetGateway(igw, "Internet Gateway", "AWS::EC2::InternetGateway")
+
+internet -down-> igw
+
+rectangle "VPC laboratorio-ep02\n10.0.0.0/16" as vpc {
+
+  package "AZ A - us-east-1a" as aza {
+
+    rectangle "Subred publica A\n10.0.1.0/24" as pubA {
+      rectangle "Recursos publicos\nNo definidos en esta plantilla" as pubResA
+    }
+
+    rectangle "Subred privada App A\n10.0.11.0/24" as appA {
+      ElasticKubernetesService(eksA, "Amazon EKS", "Nodos privados / aplicaciones")
+      rectangle "SG-App\nReferencial: no definido" as sgAppA #FFF2CC
+    }
+
+    rectangle "Subred privada Data A\n10.0.21.0/24" as dataA {
+      DynamoDB(dbA, "Servicios de datos", "Representacion conceptual")
+      rectangle "SG-Data\nReferencial: no definido" as sgDataA #EADCF8
+    }
+  }
+
+  package "AZ B - us-east-1b" as azb {
+
+    rectangle "Subred publica B\n10.0.2.0/24" as pubB {
+      rectangle "Recursos publicos\nNo definidos en esta plantilla" as pubResB
+    }
+
+    rectangle "Subred privada App B\n10.0.12.0/24" as appB {
+      ElasticKubernetesService(eksB, "Amazon EKS", "Nodos privados / aplicaciones")
+      rectangle "SG-App\nReferencial: no definido" as sgAppB #FFF2CC
+    }
+
+    rectangle "Subred privada Data B\n10.0.22.0/24" as dataB {
+      DynamoDB(dbB, "Servicios de datos", "Representacion conceptual")
+      rectangle "SG-Data\nReferencial: no definido" as sgDataB #EADCF8
+    }
+  }
+
+  package "VPC Endpoints" as endpoints {
+    SimpleStorageService(s3, "Amazon S3", "Gateway Endpoint")
+    DynamoDB(ddb, "Amazon DynamoDB", "Gateway Endpoint")
+    EC2(ecr, "Amazon ECR", "Endpoint de interfaz")
+    EC2(ec2, "Amazon EC2", "Endpoint de interfaz")
+    EC2(sts, "AWS STS", "Endpoint de interfaz")
+    Cloudwatch(cw, "Amazon CloudWatch Logs", "Endpoint de interfaz")
+
+    rectangle "SG-Endpoints\nTCP 443 desde 10.0.0.0/16\nDefinido en CloudFormation" as sgEP #FCE4D6
+  }
+
+  rectangle "Public Route Table\n10.0.0.0/16 -> local\n0.0.0.0/0 -> IGW" as rtPublic #D9EAD3
+  rectangle "App Private Route Table\n10.0.0.0/16 -> local\nSin ruta por defecto a Internet" as rtApp #D9EAF7
+  rectangle "Data Private Route Table\n10.0.0.0/16 -> local\nSin ruta por defecto a Internet" as rtData #EADCF8
+}
+
+igw --> rtPublic : ruta publica
+rtPublic --> pubA
+rtPublic --> pubB
+
+appA <--> appB : Trafico entre AZ\nsegun reglas de red
+appA --> dataA : Acceso a datos\npuertos segun motor
+appB --> dataB : Acceso a datos\npuertos segun motor
+
+appA --> sgEP : HTTPS 443
+appB --> sgEP : HTTPS 443
+
+rtPublic ..> s3 : rutas S3
+rtApp ..> s3 : rutas S3
+rtData ..> s3 : rutas S3
+
+rtApp ..> ddb : rutas DynamoDB
+rtData ..> ddb : rutas DynamoDB
+
+note bottom of sgEP
+Este es el unico Security Group
+creado explicitamente en el script.
+end note
+
+note bottom of rtApp
+No se crean en esta plantilla:
+cluster EKS, nodos, NAT Gateway,
+bases de datos ni SG-App / SG-Data.
+end note
+
+legend right
+ |= Elemento |= Estado |
+ | VPC y subredes | Definidos |
+ | Internet Gateway | Definido |
+ | Tablas de rutas | Definidas |
+ | SG-Endpoints | Definido |
+ | VPC Endpoints | Definidos |
+ | Cluster y nodos EKS | No definidos |
+ | NAT Gateway | No definido |
+ | SG-App / SG-Data | No definidos |
+endlegend
+
+@enduml
